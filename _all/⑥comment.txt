@@ -1,0 +1,308 @@
+# Add Comment for Message
+
+# create: Comment model & migration file(-mはデータベースへのマイグレーションファイルを同時に作成するオプション)
+php artisan make:model -m Comment
+
+# mofify: database/migrations/xxxx_create_comments_table.php
+
+    public function up()
+    {
+        Schema::create('comments', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->bigInteger('message_id')->unsigned()->index();
+            $table->string('name');
+            $table->string('body');
+            $table->timestamps();
+            
+            //外部キー制約
+            $table->foreign('message_id')
+                    ->references('id')
+                    ->on('messages')
+                    ->onDelete('cascade');
+            
+        });
+    }
+    
+# migration
+php artisan migrate
+
+# modified Model: app/Comment.php
+
+<?php
+
+namespace App;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Comment extends Model
+{
+    
+    protected $fillable = ['message_id', 'name', 'body'];
+    
+    public function message()
+    {
+        return $this->belongsTo('App\Message');
+    }
+}
+
+# modified Model: app/Message.php
+
+<?php
+
+namespace App;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Message extends Model
+{
+    
+    protected $fillable = [
+        'name', 'content',
+    ];
+    
+    // 入力チェック
+    public function validate(){
+        
+        // エラー配列を空で作成
+        $errors = array();
+        
+        // 名前が入力されていなければ
+        if($this->name === ''){
+            $errors[] = '名前を入力してください';
+        }
+        // タイトルが入力されていなければ
+        if($this->title === ''){
+            $errors[] = 'タイトルを入力してください';
+        }
+        // 本文が入力されていなければ
+        if($this->body === ''){
+            $errors[] = '本文を入力してください';
+        }
+        // 画像が選択されていなければ
+        if($this->image === ''){
+            $errors[] = '画像を選択してください';
+        }
+        
+        // エラー配列を返す
+        return $errors;
+    }
+
+    public function comments()
+    {
+        return $this->hasMany('App\Comment');
+    }
+}
+
+# add dummy comment with tinker
+php artisan tinker
+
+use App\Message
+use App\Comment
+Message::all()
+$message = Message::find(6)
+$comment = new Comment()
+$comment->message_id = $message->id
+$comment->name = 'takaoka'
+$comment->body = 'hello'
+$comment
+$comment->save();
+
+$message->comments()->get()
+
+$comment = Comment::find(1)
+$comment->message()->get()
+exit
+
+# create CommentsController 
+php artisan make:controller CommentsController --resource --model=Comment
+
+# modify routing: routes/web.php
+<?php
+
+/*
+|--------------------------------------------------------------------------
+| Web Routes
+|--------------------------------------------------------------------------
+|
+| Here is where you can register web routes for your application. These
+| routes are loaded by the RouteServiceProvider within a group which
+| contains the "web" middleware group. Now create something great!
+|
+*/
+
+Route::get('/', 'MessagesController@index');
+Route::resource('messages', 'MessagesController');
+Route::resource('comments', 'CommentsController', ['only' => ['create', 'store']]);
+// HTTPS接続でアセット(CSSや画像など)を読み込むため
+if (env('APP_ENV') === 'local') {
+    URL::forceScheme('https');
+};
+
+
+# confirm routing
+php artisan route:list
+
++--------+-----------+-------------------------+------------------+-------------------------------------------------+--------------+
+| Domain | Method    | URI                     | Name             | Action                                          | Middleware   |
++--------+-----------+-------------------------+------------------+-------------------------------------------------+--------------+
+|        | GET|HEAD  | /                       |                  | App\Http\Controllers\MessagesController@index   | web          |
+|        | GET|HEAD  | api/user                |                  | Closure                                         | api,auth:api |
+|        | POST      | comments                | comments.store   | App\Http\Controllers\CommentsController@store   | web          |
+|        | GET|HEAD  | comments/create         | comments.create  | App\Http\Controllers\CommentsController@create  | web          |
+|        | GET|HEAD  | messages                | messages.index   | App\Http\Controllers\MessagesController@index   | web          |
+|        | POST      | messages                | messages.store   | App\Http\Controllers\MessagesController@store   | web          |
+|        | GET|HEAD  | messages/create         | messages.create  | App\Http\Controllers\MessagesController@create  | web          |
+|        | GET|HEAD  | messages/{message}      | messages.show    | App\Http\Controllers\MessagesController@show    | web          |
+|        | PUT|PATCH | messages/{message}      | messages.update  | App\Http\Controllers\MessagesController@update  | web          |
+|        | DELETE    | messages/{message}      | messages.destroy | App\Http\Controllers\MessagesController@destroy | web          |
+|        | GET|HEAD  | messages/{message}/edit | messages.edit    | App\Http\Controllers\MessagesController@edit    | web          |
++--------+-----------+-------------------------+------------------+-------------------------------------------------+--------------+
+
+# modified MessagesController@show
+
+use App\Comment;
+
+    public function show(Message $message)
+    {
+        // そのmessageに紐づいたコメント一覧を取得
+        $comments = $message->comments()->get();
+        // セッションからフラッシュメッセージ取得しセッション情報破棄
+        $flash_message = session('flash_message');
+        session()->forget('flash_message');
+
+        // データを引き連れてviewへ移動
+        return view('messages.show', compact('message', 'flash_message', 'comments'));
+    }
+
+# modified view: resources/views/messages/show.blade.php
+
+@extends('layouts.app')
+@section('title', 'id: ' .  $message->id .  'の投稿詳細')
+@section('content')
+            <div class="row mt-2">
+                <table class="table table-bordered table-striped">
+                    <tr>
+                        <th>id</th>
+                        <td>{{ $message->id }}</td>
+                    </tr>
+                    <tr>
+                        <th>名前</th>
+                        <td>{{ $message->name }}</td>
+                    </tr>
+                    <tr>
+                        <th>タイトル</th>
+                        <td>{{ $message->title }}</td>
+                    </tr>
+                    <tr>
+                        <th>内容</th>
+                        <td>{{ $message->body }}</td>
+                    </tr>
+                    <tr>
+                        <th>画像</th>
+                        <td><img src="{{ asset('uploads') }}/{{ $message->image }}" alt="表示する画像がありません。"></td>
+                    </tr>
+                </table>
+            </div> 
+            
+            <div class="row">
+                <!--<a href="edit.php?id=<{{ $message->id }}" class="col-sm-6 btn btn-primary">編集</a>-->
+                <a href="/messages/{{ $message->id }}/edit" class="col-sm-6 btn btn-primary">編集</a>
+                <!--<form class="col-sm-6" action="delete.php" method="POST">-->
+                <form class="col-sm-6" action="/messages/{{ $message->id }}" method="POST">
+                    <!--CSRFトークンを生成-->
+                    <input type="hidden" name="_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="_method" value="DELETE">
+                    <!--<input type="hidden" name="id" value="{{ $message->id }}">-->
+                    <button type="submit" class="btn btn-danger col-sm-12" onclick="return confirm('投稿を削除します。よろしいですか？')">削除</button>
+                </form>
+            </div>
+            
+            <div class="offset-sm-2 col-sm-8 comments mt-4">
+            @if(count($comments) !== 0)
+            <div class="row mt-4">
+                <h3 class="offset-sm-3 col-sm-6 text-center mt-3 mb-3">コメント一覧</h3>
+            </div>
+            <div class="row">
+                <p class="offset-sm-1 col-sm-1">{{ count($comments) }}件</p>
+            </div>
+            <div class="row">
+                <table class="offset-sm-1 col-sm-10 table table-bordered table-striped">
+                    <tr>
+                        <th>コメントID</th>
+                        <th>名前</th>
+                        <th>コメント</th>
+                        <th>コメント時刻</th>
+                    </tr>   
+                    @foreach($comments as $comment)
+                    <tr>
+                        <td>{{$comment->id}}</td>
+                        <td>{{$comment->name}}</td>
+                        <td>{{$comment->body}}</td>
+                        <td>{{$comment->created_at}}</td>
+                    </tr>
+                    @endforeach
+                </table>
+            </div>
+            @else
+            <p class="offset-sm-1 col-sm-10 text-center mt-4">コメントはまだありません</p>
+            @endif
+         
+       
+            <div class="row mt-3 offset-sm-12">
+                <form action="{{route('comments.store')}}" method="POST" class="form-group offset-sm-1 col-sm-10">
+                    {{ csrf_field() }}
+                    <input type="hidden" name="message_id" value="{{$message->id}}">
+                    <!-- 1行 -->
+                    <div class="form-group row">
+                        <label class="col-sm-2 col-form-label">名前</label>
+                        <div class="col-sm-10">
+                            <input type="text" class="form-control" name="name" required>
+                        </div>
+                    </div>
+                
+                    <!-- 1行 -->
+                    <div class="form-group row">
+                        <label class="col-sm-2 col-form-label">コメント</label>
+                        <div class="col-sm-10">
+                            <input type="text" class="form-control" name="body" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group row">
+                        <div class="offset-sm2 col-sm-10">
+                            <button type="submit" class="btn btn-primary">コメント</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="row mt-5">
+                <!--<a href="index.php" class="btn btn-primary">投稿一覧</a>-->
+                <a href="/messages" class="btn btn-primary">投稿一覧</a>
+            </div>
+        </div>
+@endsection          
+
+# modifed CommentsController@store
+use App\Message;
+
+    public function store(Request $request)
+    {
+
+        $comment = new Comment();
+        $comment->message_id = $request->input('message_id');
+        $comment->name = $request->input('name');
+        $comment->body = $request->input('body');
+        $comment->save();
+        
+        $message = Message::find($request->input('message_id'));
+        
+        // フラッシュメッセージをセッションに保存
+        session(['flash_message' => 'コメント投稿が成功しました。']);
+
+        return redirect()->route('messages.show', $message);
+
+    }
+
+
+
